@@ -109,12 +109,12 @@ server {
     # 子域名配置
     $(for sub in "${subdomains[@]}"; do
 cat <<SUB_LOCATION
-    location / {
+    location ~ ^/(.*)\$ {
         if (\$host = ${sub}) {
-            rewrite ^/(.*)\$ /\$1 break;
+            set \$sub_path /\$1;
             root /var/www/${sub}/html;
             index index.html index.htm;
-            try_files \$uri \$uri/ =404;
+            try_files \$sub_path \$sub_path/ =404;
             break;
         }
     }
@@ -132,7 +132,8 @@ sudo ln -s "/etc/nginx/sites-available/${domain}" "/etc/nginx/sites-enabled/" ||
 # 检查Nginx配置
 echo "正在检查Nginx配置..."
 if ! sudo nginx -t; then
-    echo "Nginx配置检查失败" >&2
+    echo "Nginx配置检查失败，生成的配置文件如下："
+    cat "/etc/nginx/sites-available/${domain}"
     exit 1
 fi
 
