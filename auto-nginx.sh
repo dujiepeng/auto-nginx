@@ -162,9 +162,9 @@ server {
     server_name ${domain} ${www_domain};
     
     root /var/www/${domain}/html;
-    index index.html index.htm index.php;
     
     location / {
+        index index.html index.htm index.php;
         try_files \$uri \$uri/ =404;
     }
     
@@ -189,9 +189,9 @@ server {
     server_name ${sub};
     
     root /var/www/${sub}/html;
-    index index.html index.htm index.php;
     
     location / {
+        index index.html index.htm index.php;
         try_files \$uri \$uri/ =404;
     }
     
