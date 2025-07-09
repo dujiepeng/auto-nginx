@@ -441,11 +441,11 @@ if [ $certbot_exit_code -eq 0 ]; then
     echo "1. 设置SSL自动续期：sudo systemctl enable certbot.timer"
     echo "2. 测试SSL配置：https://www.ssllabs.com/ssltest/"
     echo "3. 配置网站内容：编辑 /var/www/${domain}/html/ 目录中的文件"
+    echo -e "\n感谢使用自动Nginx配置脚本！"
 else
     echo "✅ Nginx配置：成功"
     echo "❌ SSL证书：失败"
     echo -e "\n您的网站已部分配置完成，目前只能通过HTTP访问。"
     echo "要启用HTTPS，请解决上述SSL证书问题后重新运行此脚本或手动配置SSL。"
-fi
-
-echo -e "\n感谢使用自动Nginx配置脚本！"    
+    echo -e "\n配置未完成，请解决上述问题后重试。"
+fi    
