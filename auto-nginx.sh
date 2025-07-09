@@ -53,9 +53,47 @@ confirm_default_yes() {
     [[ "$response" =~ ^[Yy]$|^$ ]]
 }
 
+# 检查系统类型
+if [ -f /etc/debian_version ]; then
+    # Debian/Ubuntu系统
+    NGINX_AVAILABLE="/etc/nginx/sites-available"
+    NGINX_ENABLED="/etc/nginx/sites-enabled"
+    PKG_MANAGER="apt"
+    PKG_UPDATE="apt update"
+    PKG_INSTALL="apt install -y"
+elif [ -f /etc/redhat-release ]; then
+    # CentOS/RHEL系统
+    NGINX_AVAILABLE="/etc/nginx/conf.d"
+    NGINX_ENABLED="/etc/nginx/conf.d"
+    PKG_MANAGER="yum"
+    PKG_UPDATE="yum update -y"
+    PKG_INSTALL="yum install -y"
+else
+    echo "不支持的系统类型，脚本可能无法正常工作" >&2
+    if confirm_default_yes "是否继续？"; then
+        # 默认使用Debian/Ubuntu的配置
+        NGINX_AVAILABLE="/etc/nginx/sites-available"
+        NGINX_ENABLED="/etc/nginx/sites-enabled"
+        PKG_MANAGER="apt"
+        PKG_UPDATE="apt update"
+        PKG_INSTALL="apt install -y"
+    else
+        exit 1
+    fi
+fi
+
+# 创建必要的目录
+if [ ! -d "$NGINX_AVAILABLE" ]; then
+    sudo mkdir -p "$NGINX_AVAILABLE"
+fi
+
+if [ ! -d "$NGINX_ENABLED" ] && [ "$NGINX_AVAILABLE" != "$NGINX_ENABLED" ]; then
+    sudo mkdir -p "$NGINX_ENABLED"
+fi
+
 # 删除旧配置文件（如果存在）
-config_file="/etc/nginx/sites-available/${domain}"
-enabled_file="/etc/nginx/sites-enabled/${domain}"
+config_file="${NGINX_AVAILABLE}/${domain}.conf"
+enabled_file="${NGINX_ENABLED}/${domain}.conf"
 
 if [ -f "$config_file" ] || [ -L "$enabled_file" ]; then
     echo "发现旧配置文件，准备删除..."
@@ -69,7 +107,7 @@ fi
 
 # 更新系统并安装必要的软件
 echo "正在更新系统并安装Nginx和Certbot..."
-sudo apt update && sudo apt install -y nginx certbot python3-certbot-nginx || {
+sudo $PKG_UPDATE && sudo $PKG_INSTALL nginx certbot python3-certbot-nginx || {
     echo "软件安装失败" >&2
     exit 1
 }
@@ -80,6 +118,9 @@ sudo mkdir -p "/var/www/${domain}/html" || {
     echo "创建目录失败" >&2
     exit 1
 }
+
+# 为www域名创建符号链接到主域名目录
+sudo ln -sf "/var/www/${domain}" "/var/www/${www_domain}"
 
 # 为每个子域名创建目录
 for sub in "${subdomains[@]}"; do
@@ -100,56 +141,84 @@ done
 
 # 设置权限
 echo "正在设置文件权限..."
-sudo chown -R www-data:www-data "/var/www/${domain}/html"
+sudo chown -R www-data:www-data "/var/www/${domain}"
 sudo chmod -R 755 /var/www
 
 # 为每个子域名设置权限
 for sub in "${subdomains[@]}"; do
-    sudo chown -R www-data:www-data "/var/www/${sub}/html"
+    sudo chown -R www-data:www-data "/var/www/${sub}"
 done
 
 # 创建Nginx配置文件
 echo "正在创建Nginx配置文件..."
-cat > "/etc/nginx/sites-available/${domain}" <<EOF
+
+# 主域名和www域名配置
+cat > "${config_file}" <<EOF
+# 主域名和www域名配置
 server {
     listen 80;
-    server_name $(printf "%s " "${all_domains[@]}");
-
-    # 主域名配置
+    listen [::]:80;
+    
+    server_name ${domain} ${www_domain};
+    
+    root /var/www/${domain}/html;
+    index index.html index.htm index.php;
+    
     location / {
-        root /var/www/${domain}/html;
-        index index.html index.htm;
         try_files \$uri \$uri/ =404;
     }
-
-    # 子域名配置
-    $(for sub in "${subdomains[@]}"; do
-cat <<SUB_LOCATION
-    location ~ ^/(.*)\$ {
-        if (\$host = ${sub}) {
-            set \$sub_path /\$1;
-            root /var/www/${sub}/html;
-            index index.html index.htm;
-            try_files \$sub_path \$sub_path/ =404;
-            break;
-        }
+    
+    # 通用的错误页面
+    error_page 404 /404.html;
+    error_page 500 502 503 504 /50x.html;
+    location = /50x.html {
+        root /usr/share/nginx/html;
     }
-SUB_LOCATION
-done)
 }
+
 EOF
+
+# 为每个子域名添加单独的server块
+for sub in "${subdomains[@]}"; do
+    cat >> "${config_file}" <<EOF
+# 子域名 ${sub} 配置
+server {
+    listen 80;
+    listen [::]:80;
+    
+    server_name ${sub};
+    
+    root /var/www/${sub}/html;
+    index index.html index.htm index.php;
+    
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+    
+    # 通用的错误页面
+    error_page 404 /404.html;
+    error_page 500 502 503 504 /50x.html;
+    location = /50x.html {
+        root /usr/share/nginx/html;
+    }
+}
+
+EOF
+done
 
 # 启用网站配置
 echo "正在启用网站配置..."
-sudo ln -s "/etc/nginx/sites-available/${domain}" "/etc/nginx/sites-enabled/" || {
-    echo "启用配置失败，可能配置已存在" >&2
-}
+if [ "$NGINX_AVAILABLE" != "$NGINX_ENABLED" ]; then
+    sudo ln -sf "${config_file}" "${enabled_file}" || {
+        echo "启用配置失败，可能配置已存在" >&2
+    }
+fi
 
 # 检查Nginx配置
 echo "正在检查Nginx配置..."
 if ! sudo nginx -t; then
     echo "Nginx配置检查失败，生成的配置文件如下："
-    cat "/etc/nginx/sites-available/${domain}"
+    cat "${config_file}"
     exit 1
 fi
 
