@@ -45,10 +45,26 @@ for sub in "${subdomains[@]}"; do
 done
 echo
 
-read -p "是否继续? (y/N): " confirm
-if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-    echo "操作已取消"
-    exit 1
+# 默认确认选项函数
+confirm_default_yes() {
+    local prompt="$1"
+    read -p "${prompt} (Y/n): " response
+    response="${response:-Y}"  # 默认值为Y
+    [[ "$response" =~ ^[Yy]$|^$ ]]
+}
+
+# 删除旧配置文件（如果存在）
+config_file="/etc/nginx/sites-available/${domain}"
+enabled_file="/etc/nginx/sites-enabled/${domain}"
+
+if [ -f "$config_file" ] || [ -L "$enabled_file" ]; then
+    echo "发现旧配置文件，准备删除..."
+    if confirm_default_yes "是否删除旧的Nginx配置文件？"; then
+        sudo rm -f "$config_file" "$enabled_file"
+        echo "旧配置文件已删除"
+    else
+        echo "保留旧配置文件，可能导致配置冲突"
+    fi
 fi
 
 # 更新系统并安装必要的软件
