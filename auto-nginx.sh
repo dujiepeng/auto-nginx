@@ -95,6 +95,19 @@ fi
 config_file="${NGINX_AVAILABLE}/${domain}.conf"
 enabled_file="${NGINX_ENABLED}/${domain}.conf"
 
+# 检查并删除sites-enabled目录下可能存在的所有与当前域名相关的配置
+echo "正在检查并清理旧的Nginx配置文件..."
+if [ -d "$NGINX_ENABLED" ]; then
+    # 查找并删除可能与当前域名相关的所有配置文件
+    for old_conf in "${NGINX_ENABLED}"/*${domain}*; do
+        if [ -f "$old_conf" ] || [ -L "$old_conf" ]; then
+            echo "发现旧配置文件: $old_conf"
+            sudo rm -f "$old_conf"
+            echo "已删除旧配置文件: $old_conf"
+        fi
+    done
+fi
+
 if [ -f "$config_file" ] || [ -L "$enabled_file" ]; then
     echo "发现旧配置文件，准备删除..."
     if confirm_default_yes "是否删除旧的Nginx配置文件？"; then
